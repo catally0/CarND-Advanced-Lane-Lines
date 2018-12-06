@@ -19,13 +19,14 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
+[image1]: ./camera_cal/undist_11.png "Undistorted11"
 [image2]: ./test_images/test1.jpg "Road Transformed"
 [image3]: ./examples/binary_combo_example.jpg "Binary Example"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
+[image7]: ./test_images/undist_test1.png "Undistort road image"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
@@ -43,11 +44,19 @@ You're reading it!
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
 
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
+The code for this step is contained in `calibration.py`
 
-I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
+First I check whether `cal.npz` exists. This is the file that I choose to store the calibration data. If the file doesn't exist, the calibraiton will start.
 
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
+I started the calibration by defining the number of chessboard corners. By looking at the pictures in `camera_cal` folder, I can see that there're 6 rows and each row has 9 corners. Then I create a coordinate list for all these points, which looks like [[0,0,0],[1,0,0],...[0,1,0],[1,1,0]...,[8,5,0]]. Here I am assuming the chessboard is fixed on the (x,y) plane at z=0. This list will be used as object points to represent the the corner points found in actual calibration image.
+
+Then I iterate the calibration images in camera_cal folder. For each image, I covert it to gray and use `cv2.findChessboardCorners` to search for corners. If the corners are found, I will add the object points and actual image points to a list called `objpoints` and `imgpoints`.
+
+I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function. Then I save the calibration result `mtx` and `dist` to `cal.npz`.
+
+If `cal.npz` exists from beginning, I will load them and not to run the calibration again.
+
+After getting the calibration data, I applied this distortion correction to the calibration image using the `cv2.undistort()` function and obtained this result: 
 
 ![alt text][image1]
 
@@ -56,7 +65,16 @@ I then used the output `objpoints` and `imgpoints` to compute the camera calibra
 #### 1. Provide an example of a distortion-corrected image.
 
 To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
+
 ![alt text][image2]
+
+It's quite simple. Like I did in `calibration.py`, I firstly load the calibration data `mtx` and `dist` in `cal.npz`. If the calibration file doesn't exist, then exit.
+
+Then I define a function that takes the loaded image as input and return undistot image by using `cv2.undistort` with parameter `mtx` and `dist`, which are loaded above.
+
+So for the example image above, the undistort result looks like this
+
+![alt text][image7]
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
