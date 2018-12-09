@@ -18,8 +18,11 @@ else:
     print('Calibration not exist')
     exit(-1)
 
-def save_img(img,filename='./output_image/undefined.jpg'):
+def save_img(img,filename='./output_image/undefined.jpg',binary=False):
+    if binary==True:
+        img=img*255
     cv2.imwrite(filename,img)
+
 
 def undistort(img):
     return cv2.undistort(img, mtx, dist, None, mtx)
@@ -45,21 +48,38 @@ def threshhold_binary(img, s_thresh=(170, 255), sx_thresh=(20, 100)):
     # Stack each channel
     color_binary = np.zeros_like(s_binary)
     color_binary[(s_binary==1) | (sxbinary==1)]=1
-    plt.imshow(color_binary, cmap='gray')
-    plt.show()
+
     #color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary)) * 255
     return color_binary
 
+def warper(img):
+    img_size=(img.shape[1], img.shape[0])
+    src=np.float32([[278,675], [602,445],  [681,445],  [1041,675]])
+    dst=np.float32([[320,720], [320,0],   [960,0],    [960, 720]])
 
+    M = cv2.getPerspectiveTransform(src, dst)
+    warp = cv2.warpPerspective(img, M, img_size, flags=cv2.INTER_LINEAR)
 
-test_img=glob.glob('./test_images/test*.jpg')
-i=1
-for fname in test_img:
-    img = cv2.imread(fname) 
-    undist_img = undistort(img)
-    binary_img=threshhold_binary(undist_img)
-    #save_img(binary_img,'./output_images/'+str(i)+'.jpg')
-    i+=1
+    
+    ''''''
+    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
+    ax1.imshow(img)
+    ax1.plot(src[:2,0],src[:2,1],'r--', lw=2)
+    ax1.plot(src[-2:,0],src[-2:,1],'b--', lw=2)
+    ax1.set_title('Original Image', fontsize=30)
+    ax2.imshow(warp)
+    ax2.plot(dst[:2,0],dst[:2,1],'r--', lw=2)
+    ax2.plot(dst[-2:,0],dst[-2:,1],'b--', lw=2)
+    ax2.set_title('Warp Image', fontsize=30)
+    
+    plt.savefig('.\\output_images\\warp2.png')
+    plt.show()
+    return warp
 
+    
+    
+img=mpimg.imread('./test_images/straight_lines2.jpg')
+img=undistort(img)
+warper(img)
 
 
