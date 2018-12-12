@@ -9,6 +9,7 @@ cal_file='cal.npz'
 mtx=[]
 dist=[]
 
+
 if os.path.exists(cal_file):  
     print('Calibration file exists. Load file...')
     cal_data=np.load(cal_file)
@@ -24,10 +25,54 @@ def save_img(img,filename='./output_image/undefined.jpg',binary=False):
     cv2.imwrite(filename,img)
 
 
+class Line():
+    def __init__(self):
+        # was the line detected in the last iteration?
+        self.detected = False  
+        # x values of the last n fits of the line
+        self.recent_xfitted = [] 
+        #average x values of the fitted line over the last n iterations
+        self.bestx = None     
+        #polynomial coefficients averaged over the last n iterations
+        self.best_fit = None  
+        #polynomial coefficients for the most recent fit
+        self.current_fit = [np.array([False])]  
+        #radius of curvature of the line in some units
+        self.radius_of_curvature = None 
+        #distance in meters of vehicle center from the line
+        self.line_base_pos = None 
+        #difference in fit coefficients between last and new fits
+        self.diffs = np.array([0,0,0], dtype='float') 
+        #x values for detected line pixels
+        self.allx = None  
+        #y values for detected line pixels
+        self.ally = None  
+
+left_lines=[]
+right_lines=[]
+frame_num=0
+last_left_line=Line()
+last_right_line=Line()
+last_n_left_fitx=[]
+last_n_right_fitx=[]
+
+def average_n_fit(fit,new_fit,detection,n=5):
+    if len(fit) >= n:
+        fit.pop()
+        if detection == True:
+            fit.insert(0,new_fit)
+        return fit,np.mean(np.array(fit), axis=0)
+    else:
+        if detection == True:
+            fit.insert(0,new_fit)
+        return fit, np.mean(fit, axis=0)
+
+
+
 def undistort(img):
     return cv2.undistort(img, mtx, dist, None, mtx)
 
-def threshhold_binary(img, s_thresh=(170, 230), sx_thresh=(20, 100), verbose=False):
+def threshhold_binary(img, s_thresh=(130, 240), sx_thresh=(20, 100), verbose=False):
     img = np.copy(img)
     # Convert to HLS color space and separate the V channel
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
@@ -50,6 +95,8 @@ def threshhold_binary(img, s_thresh=(170, 230), sx_thresh=(20, 100), verbose=Fal
     color_binary = np.zeros_like(s_binary)
     color_binary[(s_binary==1) | (sxbinary==1)]=1
     if verbose==True:
+        plt.imshow(s_channel)
+        plt.show()
         color_img = np.dstack(( np.zeros_like(s_binary), s_binary, sxbinary)) * 255
         plt.imshow(color_img)
         plt.show()
@@ -117,10 +164,14 @@ def hist(img):
     return histogram
 
 def find_lane_pixels(binary_warped, verbose=False):
+    global last_left_line
+    global last_right_line
+
     # Take a histogram of the bottom half of the image
     histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
 
     if verbose==True:
+        print('hist')
         plt.plot(histogram)
         plt.show()
 
@@ -129,8 +180,19 @@ def find_lane_pixels(binary_warped, verbose=False):
     # Find the peak of the left and right halves of the histogram
     # These will be the starting point for the left and right lines
     midpoint = np.int(histogram.shape[0]//2)
-    leftx_base = np.argmax(histogram[:midpoint])
-    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+
+    #print(last_left_line.line_base_pos, np.argmax(histogram[:midpoint]))
+    if last_left_line.detected == True:
+        #print('center in last line')
+        leftx_base = last_left_line.line_base_pos
+    else:
+        leftx_base = np.argmax(histogram[:midpoint])
+
+    if last_right_line.detected == True:
+        #print('center in last line')
+        rightx_base = last_right_line.line_base_pos
+    else:
+        rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
     # HYPERPARAMETERS
     # Choose the number of sliding windows
@@ -275,26 +337,44 @@ def find_lane_pixels(binary_warped, verbose=False):
 ym_per_pix = 50/720 # meters per pixel in y dimension
 xm_per_pix = 3.7/640 # meters per pixel in x dimension
 
+def sanity_check(left_fitx, right_fitx):
+    global last_left_line
+    global last_right_line
+    lane_width=right_fitx-left_fitx
+    u=np.mean(lane_width)
+    s=np.std(lane_width)
+    if u>500 and u<750 and s<60:
+        return True
+    else:
+        return False
+
 def fit_polynomial(binary_warped, verbose=False, return_type='img'):
+    global last_left_line
+    global last_right_line
+    global last_n_left_fitx
+    global last_n_right_fitx
+
     # Find our lane pixels first
     leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped, verbose=verbose)
+
     if verbose==True:
         plt.imshow(out_img)
         plt.show()
 
     # Fit a second order polynomial to each using `np.polyfit`
     
-
     if return_type=='img':
         
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
+        
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
         # Generate x and y values for plotting
         
         try:
+            left_fit = np.polyfit(lefty, leftx, 2)
+            right_fit = np.polyfit(righty, rightx, 2)
             left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
             right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
         except TypeError:
             # Avoids an error if `left` and `right_fit` are still none or incorrect
             if verbose==True:
@@ -302,29 +382,63 @@ def fit_polynomial(binary_warped, verbose=False, return_type='img'):
             left_fitx = 1*ploty**2 + 1*ploty
             right_fitx = 1*ploty**2 + 1*ploty
         
-        ## Visualization ##
-        # Colors in the left and right lane regions
-        out_img[lefty, leftx] = [255, 0, 0]
-        out_img[righty, rightx] = [0, 0, 255]
-        path_img = np.zeros_like(out_img)
+        found_lane=False
+        if sanity_check(left_fitx, right_fitx):
+            last_left_line.detected = True
+            last_right_line.detected = True
+            last_left_line.line_base_pos = left_fitx[-1]
+            last_right_line.line_base_pos = right_fitx[-1]
+            last_n_left_fitx, left_fitx = average_n_fit(last_n_left_fitx,left_fitx,last_left_line.detected)
+            last_n_right_fitx, right_fitx = average_n_fit(last_n_right_fitx,right_fitx,last_right_line.detected)
+            ## Visualization ##
+            # Colors in the left and right lane regions
+            out_img[lefty, leftx] = [255, 0, 0]
+            out_img[righty, rightx] = [0, 0, 255]
+            path_img = np.zeros_like(out_img)
 
-        fitx=np.concatenate((left_fitx, right_fitx[::-1]), axis=None)
-        ploty=np.concatenate((ploty,ploty[::-1]),  axis=None)
-        pts = np.vstack((fitx,ploty)).astype(np.int32).T
-        cv2.fillPoly(path_img,np.int32([pts]),(0,255,0))
-        #ploty=ploty.astype(int)
-        #left_fitx=left_fitx.astype(int)
-        #lane_lines=np.zeros_like(out_img)
-        #lane_lines[ploty, left_fitx]=[255,255,255]
+            fitx=np.concatenate((left_fitx, right_fitx[::-1]), axis=None)
+            ploty=np.concatenate((ploty,ploty[::-1]),  axis=None)
+            pts = np.vstack((fitx,ploty)).astype(np.int32).T
+            cv2.fillPoly(path_img,np.int32([pts]),(0,255,0))
+            found_lane=True
+            #ploty=ploty.astype(int)
+            #left_fitx=left_fitx.astype(int)
+            #lane_lines=np.zeros_like(out_img)
+            #lane_lines[ploty, left_fitx]=[255,255,255]
 
-        # Plots the left and right polynomials on the lane lines
-        #plt.plot(left_fitx, ploty, color='yellow')
-        #plt.plot(right_fitx, ploty, color='yellow')
-        return path_img
+            # Plots the left and right polynomials on the lane lines
+            #plt.plot(left_fitx, ploty, color='yellow')
+            #plt.plot(right_fitx, ploty, color='yellow')
+        else:
+            last_left_line.detected = False
+            last_right_line.detected = False
+            last_n_left_fitx, left_fitx = average_n_fit(last_n_left_fitx,left_fitx,last_left_line.detected)
+            last_n_right_fitx, right_fitx = average_n_fit(last_n_right_fitx,right_fitx,last_right_line.detected)
+            out_img[lefty, leftx] = [255, 0, 0]
+            out_img[righty, rightx] = [0, 0, 255]
+            path_img = np.zeros_like(out_img)
+
+            fitx=np.concatenate((left_fitx, right_fitx[::-1]), axis=None)
+            ploty=np.concatenate((ploty,ploty[::-1]),  axis=None)
+            pts = np.vstack((fitx,ploty)).astype(np.int32).T
+            cv2.fillPoly(path_img,np.int32([pts]),(0,255,0))
+
+            found_lane=False
+        return found_lane, path_img
+        
     else:
-        left_fit = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
-        right_fit = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+        try:
+            left_fit = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
+            right_fit = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+        except TypeError:
+            # Avoids an error if `left` and `right_fit` are still none or incorrect
+            if verbose==True:
+                print('The function failed to fit a line!')
+
+        
+
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
+
         return ploty, left_fit, right_fit
 
 def measure_curvature(ploty, left_fit, right_fit):
@@ -345,7 +459,6 @@ def measure_offset(ploty, left_fit, right_fit):
     offset_pix=(right_fitx+left_fitx)/2-(640*xm_per_pix)
     return offset_pix
 
-    
 
 def draw_path(img, path):
     return cv2.addWeighted(img, 1, path, 0.3, 0.)
@@ -355,33 +468,65 @@ def add_text(img, text, position):
     cv2.putText(img, text, (position[0]+2, position[1]+2), font, 1., (0, 0, 0), 2)
     cv2.putText(img, text, position, font, 1., (255, 255, 255), 2)
 
-def pipeline(img):
-    img=undistort(img)
-    warp=warper(img)
+
+
+def pipeline(img, verbose=False):
+    global frame_num
+    global last_left_line
+    global last_right_line
+    frame_num +=1
+    undist=undistort(img)
+    warp=warper(undist)
     
-    binary_warped=threshhold_binary(warp)
-    fit_img=fit_polynomial(binary_warped)
-    mapped_img=draw_path(img, unwarper(fit_img))
+    binary_warped=threshhold_binary(warp, verbose=verbose)
+
+
+    found_lane, fit_img=fit_polynomial(binary_warped)
+
+    if found_lane==True:
+        
+        mapped_img=draw_path(img, unwarper(fit_img))
     
-
-    ploty, left_fit, right_fit = fit_polynomial(binary_warped, return_type='poly')
-    left_curverad, right_curverad = measure_curvature(ploty, left_fit, right_fit)
-    r_curvature = int((left_curverad + right_curverad)/2)
-    veh_offset=measure_offset(ploty, left_fit, right_fit)
+        ploty, left_fit, right_fit = fit_polynomial(binary_warped, return_type='poly')
     
-    add_text(mapped_img, 'Radius of curvature:'+str(r_curvature)+'m', (50, 50))
-    add_text(mapped_img, 'Offset:'+str(round(veh_offset,2))+'m', (50, 100))
+        left_curverad, right_curverad = measure_curvature(ploty, left_fit, right_fit)
+        r_curvature = int((left_curverad + right_curverad)/2)
+        veh_offset=measure_offset(ploty, left_fit, right_fit)
+        
+        add_text(mapped_img, 'Radius of curvature:'+str(r_curvature)+'m', (50, 50))
+        add_text(mapped_img, 'Offset:'+str(round(veh_offset,2))+'m', (50, 100))
 
-    return mapped_img
+        last_left_line.radius_of_curvature = left_curverad
 
+        
 
-'''    
-for i in [1,2,3,4,5,6]:
-    img=mpimg.imread('./test_images/test'+str(i)+'.jpg')
-    cv2.imshow('img', cv2.cvtColor(pipeline(img), cv2.COLOR_RGB2BGR))
+        return mapped_img
+    else:
+        cv2.imwrite('./unrec_img/'+str(frame_num)+'.jpg',cv2.cvtColor(img,cv2.COLOR_RGB2BGR))
+        mapped_img=draw_path(img, unwarper(fit_img))
+    
+        ploty, left_fit, right_fit = fit_polynomial(binary_warped, return_type='poly')
+    
+        left_curverad, right_curverad = measure_curvature(ploty, left_fit, right_fit)
+        r_curvature = int((left_curverad + right_curverad)/2)
+        veh_offset=measure_offset(ploty, left_fit, right_fit)
+        
+        add_text(mapped_img, 'Radius of curvature:'+str(r_curvature)+'m', (50, 50))
+        add_text(mapped_img, 'Offset:'+str(round(veh_offset,2))+'m', (50, 100))
+
+        return mapped_img
+
+''' 
+unrec_img=glob.glob('./unrec_img/*.jpg')
+for i in unrec_img[:20]:
+    img=mpimg.imread(i)
+    cv2.imshow('img', cv2.cvtColor(pipeline(img, verbose=True), cv2.COLOR_RGB2BGR))
     cv2.waitKey()
-'''
 
+
+
+
+'''
 
 from moviepy.editor import VideoFileClip
 
@@ -394,4 +539,5 @@ project_output = './output.mp4'
 clip = VideoFileClip("./project_video.mp4")
 white_clip = clip.fl_image(pipeline) #NOTE: this function expects color images!!
 white_clip.write_videofile(project_output, audio=False)
+
 
