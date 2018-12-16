@@ -530,13 +530,13 @@ for i in unrec_img[:20]:
 
 from moviepy.editor import VideoFileClip
 
-project_output = './output.mp4'
+project_output = './output_challenge.mp4'
 ## To speed up the testing process you may want to try your pipeline on a shorter subclip of the video
 ## To do so add .subclip(start_second,end_second) to the end of the line below
 ## Where start_second and end_second are integer values representing the start and end of the subclip
 ## You may also uncomment the following line for a subclip of the first 5 seconds
 ##clip1 = VideoFileClip("test_videos/solidWhiteRight.mp4").subclip(0,5)
-clip = VideoFileClip("./project_video.mp4")
+clip = VideoFileClip("./challenge_video.mp4")
 white_clip = clip.fl_image(pipeline) #NOTE: this function expects color images!!
 white_clip.write_videofile(project_output, audio=False)
 
