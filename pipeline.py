@@ -224,13 +224,14 @@ def find_lane_pixels(binary_warped, verbose=False):
         # Identify window boundaries in x and y (and right and left)
         win_y_low = binary_warped.shape[0] - (window+1)*window_height
         win_y_high = binary_warped.shape[0] - window*window_height
-        win_xleft_low = leftx_current - margin_left
-        win_xleft_high = leftx_current + margin_left
-        win_xright_low = rightx_current - margin_right
-        win_xright_high = rightx_current + margin_right
+        win_xleft_low = int(leftx_current - margin_left)
+        win_xleft_high = int(leftx_current + margin_left)
+        win_xright_low = int(rightx_current - margin_right)
+        win_xright_high = int(rightx_current + margin_right)
         
         if verbose==True:
         # Draw the windows on the visualization image
+            print(win_xleft_low,win_y_low,win_xleft_high,win_y_high)
             cv2.rectangle(out_img,(win_xleft_low,win_y_low),
             (win_xleft_high,win_y_high),(0,255,0), 2) 
             cv2.rectangle(out_img,(win_xright_low,win_y_low),
@@ -390,10 +391,19 @@ def fit_polynomial(binary_warped, verbose=False, return_type='img'):
             last_right_line.line_base_pos = right_fitx[-1]
             last_n_left_fitx, left_fitx = average_n_fit(last_n_left_fitx,left_fitx,last_left_line.detected)
             last_n_right_fitx, right_fitx = average_n_fit(last_n_right_fitx,right_fitx,last_right_line.detected)
+
             ## Visualization ##
             # Colors in the left and right lane regions
+            '''
             out_img[lefty, leftx] = [255, 0, 0]
             out_img[righty, rightx] = [0, 0, 255]
+            plt.plot(left_fitx, ploty, color='yellow')
+            plt.plot(right_fitx, ploty, color='yellow')
+            plt.imshow(out_img)
+            plt.show()
+            '''
+
+
             path_img = np.zeros_like(out_img)
 
             fitx=np.concatenate((left_fitx, right_fitx[::-1]), axis=None)
@@ -401,14 +411,9 @@ def fit_polynomial(binary_warped, verbose=False, return_type='img'):
             pts = np.vstack((fitx,ploty)).astype(np.int32).T
             cv2.fillPoly(path_img,np.int32([pts]),(0,255,0))
             found_lane=True
-            #ploty=ploty.astype(int)
-            #left_fitx=left_fitx.astype(int)
-            #lane_lines=np.zeros_like(out_img)
-            #lane_lines[ploty, left_fitx]=[255,255,255]
+            
 
-            # Plots the left and right polynomials on the lane lines
-            #plt.plot(left_fitx, ploty, color='yellow')
-            #plt.plot(right_fitx, ploty, color='yellow')
+
         else:
             last_left_line.detected = False
             last_right_line.detected = False
@@ -481,13 +486,13 @@ def pipeline(img, verbose=False):
     binary_warped=threshhold_binary(warp, verbose=verbose)
 
 
-    found_lane, fit_img=fit_polynomial(binary_warped)
+    found_lane, fit_img=fit_polynomial(binary_warped, verbose=verbose)
 
     if found_lane==True:
         
         mapped_img=draw_path(img, unwarper(fit_img))
     
-        ploty, left_fit, right_fit = fit_polynomial(binary_warped, return_type='poly')
+        ploty, left_fit, right_fit = fit_polynomial(binary_warped, return_type='poly', verbose=verbose)
     
         left_curverad, right_curverad = measure_curvature(ploty, left_fit, right_fit)
         r_curvature = int((left_curverad + right_curverad)/2)
@@ -497,8 +502,11 @@ def pipeline(img, verbose=False):
         add_text(mapped_img, 'Offset:'+str(round(veh_offset,2))+'m', (50, 100))
 
         last_left_line.radius_of_curvature = left_curverad
-
-        
+        '''
+        cv2.imshow('img', cv2.cvtColor(mapped_img, cv2.COLOR_RGB2BGR))
+        #cv2.imwrite('./output_images/example.jpg',cv2.cvtColor(mapped_img,cv2.COLOR_RGB2BGR))
+        cv2.waitKey()
+        '''
 
         return mapped_img
     else:
@@ -530,13 +538,13 @@ for i in unrec_img[:20]:
 
 from moviepy.editor import VideoFileClip
 
-project_output = './output_challenge.mp4'
+project_output = './output_project.mp4'
 ## To speed up the testing process you may want to try your pipeline on a shorter subclip of the video
 ## To do so add .subclip(start_second,end_second) to the end of the line below
 ## Where start_second and end_second are integer values representing the start and end of the subclip
 ## You may also uncomment the following line for a subclip of the first 5 seconds
 ##clip1 = VideoFileClip("test_videos/solidWhiteRight.mp4").subclip(0,5)
-clip = VideoFileClip("./challenge_video.mp4")
+clip = VideoFileClip("./project_video.mp4")
 white_clip = clip.fl_image(pipeline) #NOTE: this function expects color images!!
 white_clip.write_videofile(project_output, audio=False)
 
